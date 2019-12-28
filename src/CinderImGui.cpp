@@ -352,8 +352,8 @@ Renderer::Renderer()
 //! renders imgui drawlist
 void Renderer::render( ImDrawData* draw_data )
 {
-	const float width	= ImGui::GetIO().DisplaySize.x;
-	const float height	= ImGui::GetIO().DisplaySize.y;
+	const float width	= draw_data->DisplaySize.x;
+	const float height	= draw_data->DisplaySize.y;
 	const auto &vao		= getVao();
 	const auto &vbo		= getVbo();
 	const auto &shader	= getGlslProg();
@@ -367,6 +367,7 @@ void Renderer::render( ImDrawData* draw_data )
 		{ -1.0f,	1.0f,			0.0f,	1.0f },
 	};
 	
+    gl::ScopedViewport scopedViewport( 0, 0, width * draw_data->FramebufferScale.x, height * draw_data->FramebufferScale.y );
 	gl::ScopedVao scopedVao( vao.get() );
 	gl::ScopedBuffer scopedVbo( GL_ARRAY_BUFFER, vbo->getId() );
 	gl::ScopedBuffer scopedIbo( GL_ELEMENT_ARRAY_BUFFER, mIbo->getId() );
@@ -447,7 +448,11 @@ void Renderer::render( ImDrawData* draw_data )
 					currentTextureId = (GLuint)(intptr_t) pcmd->TextureId;
 					ctx->bindTexture( GL_TEXTURE_2D, currentTextureId, CINDER_IMGUI_TEXTURE_UNIT );
 				}
-				ctx->setScissor( { ivec2( (int)pcmd->ClipRect.x, (int)(height - pcmd->ClipRect.w) ), ivec2( (int)(pcmd->ClipRect.z - pcmd->ClipRect.x), (int)(pcmd->ClipRect.w - pcmd->ClipRect.y) ) } );
+                
+                auto scissorLowerLeft = ivec2( pcmd->ClipRect.x * draw_data->FramebufferScale.x, (height - pcmd->ClipRect.w) * draw_data->FramebufferScale.y );
+                auto scissorSize = ivec2( (pcmd->ClipRect.z - pcmd->ClipRect.x) * draw_data->FramebufferScale.x, (pcmd->ClipRect.w - pcmd->ClipRect.y) * draw_data->FramebufferScale.y );
+                
+				ctx->setScissor( { scissorLowerLeft, scissorSize } );
 				gl::drawElements( GL_TRIANGLES, (GLsizei)pcmd->ElemCount, sizeof(ImDrawIdx) == 2 ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, idx_buffer_offset );
 			}
 			idx_buffer_offset += pcmd->ElemCount;
@@ -811,7 +816,7 @@ namespace {
 	void mouseDown( ci::app::MouseEvent& event )
 	{
 		ImGuiIO& io = ImGui::GetIO();
-		io.MousePos = toPixels( event.getPos() );
+		io.MousePos = event.getPos();
 		if( event.isLeftDown() ){
 			io.MouseDown[0] = true;
 			io.MouseDown[1] = false;
@@ -827,7 +832,7 @@ namespace {
 	void mouseMove( ci::app::MouseEvent& event )
 	{
 		ImGuiIO& io = ImGui::GetIO();
-		io.MousePos = toPixels( event.getPos() );
+		io.MousePos = event.getPos();
 		
 		event.setHandled( io.WantCaptureMouse );
 	}
@@ -835,7 +840,7 @@ namespace {
 	void mouseDrag( ci::app::MouseEvent& event )
 	{
 		ImGuiIO& io = ImGui::GetIO();
-		io.MousePos = toPixels( event.getPos() );
+		io.MousePos = event.getPos();
 		
 		event.setHandled( io.WantCaptureMouse );
 	}
@@ -918,7 +923,7 @@ namespace {
 		ImGuiIO& io = ImGui::GetIO();
 		io.DeltaTime = timer.getSeconds();
 
-		if( io.DeltaTime < 0.0f ) {
+		if( io.DeltaTime <= 0.0f ) {
 			CI_LOG_W("WARNING: overriding imgui deltatime because it is " << io.DeltaTime);
 			io.DeltaTime = 1.0f/60.0f;
 		}
@@ -944,7 +949,9 @@ namespace {
 	void resize()
 	{
 		ImGuiIO& io	= ImGui::GetIO();
-		io.DisplaySize	= toPixels( getWindowSize() );
+		io.DisplaySize = getWindowSize();
+        auto contentScale = getWindowContentScale();
+        io.DisplayFramebufferScale = ImVec2( contentScale, contentScale );
 		newFrameGuard();
 	}
 	
@@ -1016,6 +1023,7 @@ void initialize( const Options &options )
 	// set io and keymap
 	ImGuiIO& io                         = ImGui::GetIO();
 	io.DisplaySize                      = ImVec2( window->getSize().x, window->getSize().y );
+    io.DisplayFramebufferScale          = ImVec2( window->getContentScale(), window->getContentScale() );
 	io.DeltaTime                        = 1.0f / 60.0f;
 	io.KeyMap[ImGuiKey_Tab]             = KeyEvent::KEY_TAB;
 	io.KeyMap[ImGuiKey_LeftArrow]       = KeyEvent::KEY_LEFT;
